@@ -16,5 +16,6 @@
 *.idea
 
 # 文件夹
+/.vscode/
 /dataset/
-/saveResult/
+/train_out/
