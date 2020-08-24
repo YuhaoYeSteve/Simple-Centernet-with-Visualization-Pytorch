@@ -3,13 +3,8 @@ import torch
 from tqdm import tqdm
 import torch.optim as optim
 from config.config import TaskConfig
-from utils.init_visdom import init_visdom_
-from network.efficientnet_pytorch import EfficientNet
-from data.folder_dataloader import DataSet
-from utils.general_utils import seed_torch, save_log
-vis = init_visdom_(window_name="centernet_new")
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+from data.coco_dataloader import DataSetCoco
+from utils.general_utils import seed_torch, save_log, update_print_loss_interval
 
 
 class Evaltor(object):
@@ -21,18 +16,15 @@ class Evaltor(object):
 
 
 class Trainer(object):
-    def __init__(self):
+    def __init__(self, config):
         # ------------------------------   Set Random Sed   -------------------------------#
         if config.set_seed:
             seed_torch()  # Fix random seed for try different Hyper-Parameter
             save_log(config.log_file_path, "Set Random Sed")
         # -------------------------------  Set Training Set  ------------------------------#
-        # train
-        self.train_data = DataSet(
-            config.train_data_root, transform=config.transform, if_training=True)
-        config.class_num = self.train_data.class_num
-        self.train_loader = torch.utils.data.DataLoader(self.train_data, batch_size=config.batch_size,
-                                                        shuffle=True, pin_memory=True, num_workers=config.num_workers)
+        dataset = DataSetCoco(split="train", config=config)
+        update_print_loss_interval(config, len(dataset))
+        self.train_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True)
         # --------------------------------  Set Evaltor   ----------------------------------#
         self.evaltor = Evaltor()
 
@@ -52,25 +44,12 @@ class Trainer(object):
 
     def train(self):
         self.model.train()
-        for i, (aug_img_tensor, labels, aug_img, origin_img) in enumerate(self.train_loader):
-            if i % config.print_loss_interval == config.print_loss_remainder:
-                if config.use_visdom:
-                    origin_img_show = origin_img[0].numpy().copy()
-                    aug_img_show = aug_img[0].numpy().copy()
-                    vis.image(origin_img_show.transpose(2, 0, 1)[::-1, ...], win="**********train_origin_img**********", opts={
-                        'title': '**********train_origin_img {} * {}**********'.format(origin_img_show.shape[1], origin_img_show.shape[0])})
-
-                    vis.image(aug_img_show.transpose(2, 0, 1)[::-1, ...], win="**********train_aug_img**********", opts={
-                        'title': '**********train_aug_img {} * {}**********'.format(aug_img_show.shape[1], aug_img_show.shape[0])})
-
-            # bar = tqdm(iter(self.train_loader), ascii=True)
-            # for imgs, labels in bar:
-            #     imgs = imgs.cuda()
-            #     labels = labels.cuda()
-            #     print(labels)
-
+        for indbatch, batch in enumerate(self.train_loader):
+            for k in batch:
+                if k != 'meta':
+                    batch[k] = batch[k].cuda(config.gpu_num[0])
 
 if __name__ == "__main__":
     config = TaskConfig()
-    tainer = Trainer()
+    tainer = Trainer(config)
     tainer.train()

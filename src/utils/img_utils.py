@@ -1,19 +1,49 @@
 import cv2
 import os
+import math
 import numpy as np
 # from .pycocotools import mask as maskUtils
 
 font = cv2.FONT_HERSHEY_SIMPLEX
 
 
+def mergeHeatmap(hm):
+    width_max = 2
+    hm_class, hm_height, hm_width = hm.shape[:]
+    hm_sum = float(hm_class) / width_max
+    height_max = math.ceil(hm_sum)
+    hm_merge = np.zeros(
+        [height_max*hm_height, hm_width * width_max], dtype=np.float32)
+    for index in range(len(hm)):
+        y_index = int(index / width_max)
+        x_index = index % width_max
+        hm_merge[y_index * hm_height:(y_index + 1) * hm_height, x_index *
+                 hm_width:(x_index + 1) * hm_width] = hm[index].copy()
+        hm_merge = cv2.rectangle(hm_merge, (x_index*hm_width, y_index*hm_height),
+                                 (x_index*hm_width + hm_width, y_index*hm_height + hm_height), (1), 2)
+    return hm_merge
+
+
 def visdom_show_opencv(vis, img, title, win):
     """
-    Use visdom to show opencv numpy BGR picture in browser
+    Use visdom to show opencv numpy BGR picture(uint8) in browser
     :param path： must be string
     :return: numpy.ndarray(uint8)
     """
     vis.image(img.transpose(2, 0, 1)[
               ::-1, ...], win=win, opts={'title': title.format(img.shape[1], img.shape[0])})
+
+
+def visdom_show_heatmap(vis, img, title, win, show_shape=False):
+    """
+    Use visdom to show single channel numpy picture(np.float32) in browser
+    :param path： must be string
+    :return: numpy.ndarray(uint8)
+    """
+    if show_shape:
+        vis.image(img, win=win, opts={'title': title.format(img.shape[1], img.shape[0])})
+    else:
+        vis.image(img, win=win, opts={'title': title})
 
 
 def read_image(path):
@@ -81,8 +111,25 @@ def write_text_on_img(img, contant, position, color="red"):
     """
     bgr = choose_color(color)
     font = cv2.FONT_HERSHEY_SIMPLEX
+    height = img.shape[0]
+
+    if height >= 720 and len(contant) < 8:
+        font_size = 1.2
+        thickness = 2
+    elif height >= 720 and len(contant) >= 8:
+        font_size = 0.8
+        thickness = 2
+    elif height < 720 and len(contant) < 8:
+        font_size = 0.5
+        thickness = 1
+    elif height < 720 and len(contant) >= 8:
+        font_size = 0.5
+        thickness = 1
+    
+    
+
     x, y = position
-    img = cv2.putText(img, str(contant), (int(x), int(y)), font, 1, bgr, 1)
+    img = cv2.putText(img, str(contant), (int(x), int(y)), font, font_size, bgr, thickness)
     return img
 
 

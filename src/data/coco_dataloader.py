@@ -1,11 +1,13 @@
 from torch.utils import data
-from utils.img_utils import read_image, visdom_show_opencv, draw_single_img_bbox_annotation
+from utils.img_utils import read_image, visdom_show_opencv, visdom_show_heatmap, draw_single_img_bbox_annotation, mergeHeatmap
+from utils.centernet_utils import gaussian_radius, draw_gaussian
 import torchvision.transforms.functional as T
 import os
 import cv2
 import copy
 import torch
 import time
+import math
 import numpy as np
 import pycocotools.coco as coco
 from pycocotools.cocoeval import COCOeval
@@ -123,6 +125,8 @@ class DataSetCoco(data.Dataset):
                 "split must be string 'train' or 'val', but get {}".format(split))
         self.coco = coco.COCO(self.annot_path)
         self.images = self.coco.getImgIds()
+        self.label_map = self.coco.loadCats()
+        print(" ")
 
     def __len__(self):
         return len(self.images)
@@ -149,10 +153,11 @@ class DataSetCoco(data.Dataset):
             for single_bbox_info in anns:
                 single_img_bbox_list.append(single_bbox_info["bbox"])
                 category_ids_list.append(single_bbox_info["category_id"])
+            # Aug
             transformed = self.config.transform(image=img, bboxes=single_img_bbox_list, category_ids=category_ids_list)
             auged_img, auged_bbox, category_ids_list = transformed["image"], transformed["bboxes"], transformed["category_ids"]
 
-            
+            # show auged img
             if self.config.if_debug:
                 category_name_list = []
                 # get English name class label
@@ -162,6 +167,52 @@ class DataSetCoco(data.Dataset):
                 title = '**********train_auged_img {} * {}**********'
                 win = '**********train_auged_img**********'
                 visdom_show_opencv(self.config.vis, auged_img.copy(), title, win)
-                time.sleep(2)
                 
-            return img
+            inp = (auged_img.astype(np.float32) / 255.)
+            inp = (inp - self.config.mean) / self.config.std
+            inp = inp.transpose(2, 0, 1)
+            output_h = self.config.train_height // self.config.down_ratio
+            output_w = self.config.train_width // self.config.down_ratio
+
+            # Init Ground Truth
+            hm = np.zeros((self.config.class_num, output_h, output_w), dtype=np.float32)
+            wh = np.zeros((self.config.max_objs, 2), dtype=np.float32)
+            reg = np.zeros((self.max_objs, 2), dtype=np.float32)
+            ind = np.zeros((self.config.max_objs), dtype=np.int64)
+            reg_mask = np.zeros((self.config.max_objs), dtype=np.uint8)
+
+            # Build Ground Truth According to each bounding box
+            for index, bbox in enumerate(auged_bbox):
+                cls_id = category_ids_list[index]
+                h, w = bbox[2], bbox[3]
+                if h > 0 and w > 0:
+                    radius = gaussian_radius((math.ceil(h), math.ceil(w)))
+                    radius = max(0, int(radius))
+                    # central point
+                    ct = np.array([(bbox[0] + bbox[2] / 2) / self.config.down_ratio, (bbox[1] + bbox[3] / 2) / self.config.down_ratio], dtype=np.float32)
+                    ct_int = ct.astype(np.int32)
+                    draw_gaussian(hm[cls_id], ct_int, radius)
+
+                    # Debug single class gaussian point
+                    # if self.config.if_debug:
+                    #     cat = self.coco.loadCats(cls_id)[0]["name"]
+                    #     print("Draw {} class gaussian point".format(cat))
+                    #     title = '**********gaussian_point {} * {}**********'
+                    #     win = '**********gaussian_point**********'
+                    #     visdom_show_heatmap(self.config.vis, hm[cls_id].copy(), title, win)
+                    #     print("min:{}, max:{}".format(hm[cls_id].min(), hm[cls_id].max()))
+                    #     time.sleep(2)
+
+                    wh[index] = 1. * w, 1. * h
+                    reg[index] = ct - ct_int
+                    ind[index] = ct_int[1] * output_w + ct_int[0]
+                    reg_mask[index] = 1
+
+            if self.config.if_debug:
+                hm = mergeHeatmap(hm)
+                title = '**********heatmap_gt**********'
+                win = '**********heatmap_gt**********'
+                visdom_show_heatmap(self.config.vis, hm.copy(), title, win)
+                time.sleep(2)
+            ret = {'input': inp, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh}
+            return ret

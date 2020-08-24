@@ -10,7 +10,7 @@ class Config:
 
         # ---------------------------   Hyper-Parameter  ------------------------------#
 
-        self.model_name = "efficientnet-b0"  # "resnet50"/ SeNet / "efficientnet-b0"
+        self.model_name = "dla34"  # "resnet50"/ SeNet / "efficientnet-b0"
         self.train_epoch = 100
 
         self.best_acc = 0.0
@@ -29,6 +29,13 @@ class Config:
         self.class_weight = []
         self.pretrain_model_path = ""
         self.traing_time = get_time()
+        # --------------------------   Net-Parameter  --------------------------------#
+        self.train_height = 480
+        self.train_width = 640
+        # self.train_height = 720
+        # self.train_width = 1280
+        self.down_ratio = 4
+        self.max_objs = 128
         # -------------------------------   Switch  ----------------------------------#
         # if use visdom
         self.use_visdom = True
@@ -111,8 +118,8 @@ class TaskConfig(Config):
                 A.Flip(p=0.5),
                 A.ShiftScaleRotate(scale_limit=(-0.3, 0.3), shift_limit=(-0.3, 0.3),
                                    rotate_limit=(0, 0), border_mode=cv2.BORDER_CONSTANT, value=0, p=0.2),
-                A.RandomCrop(height=480, width=640, p=0.2),
-                A.Resize(height=480, width=640)
+                A.RandomCrop(height=self.train_height, width=self.train_width, p=0.2),
+                A.Resize(height=self.train_height, width=self.train_width)
             ],
             bbox_params=A.BboxParams(
                 # format='pascal_voc', min_visibility=0.3, label_fields=['category_ids']),  # pascal_voc: [[x_min, y_min, x_max, y_max],[]]
@@ -123,6 +130,18 @@ class TaskConfig(Config):
         if self.if_debug:
             self.num_workers = 0
             self.batch_size = 1
+        self.label_list = ['bolibang', 'bolibangduandian', 'jiaotoudiguan', 'jiaotoudiguantou',
+                           'jiaotoudiguanwei', 'liangtong', 'loudou', 'loudoujianzui', 'lvzhi',
+                           'lvzhiloudou', 'shaobei', 'shiguan', 'shiguankou', 'shiguanwei', 'shou',
+                           'tiejiaquan', 'tiejiatai', 'xiping']
+        self.class_num = len(self.label_list)
+        self.label_map = self.gen_label_map()
+
+    def gen_label_map(self):
+        label_map = {}
+        for index, label in enumerate(self.label_list):
+            label_map[str(index)] = label
+        return label_map
 
 
 if __name__ == "__main__":
