@@ -126,7 +126,6 @@ class DataSetCoco(data.Dataset):
         self.coco = coco.COCO(self.annot_path)
         self.images = self.coco.getImgIds()
         self.label_map = self.coco.loadCats()
-        print(" ")
 
     def __len__(self):
         return len(self.images)
@@ -140,51 +139,67 @@ class DataSetCoco(data.Dataset):
         ann_ids = self.coco.getAnnIds(imgIds=[img_id])
         anns = self.coco.loadAnns(ids=ann_ids)
         img = cv2.imread(img_path)
+        img_width = img.shape[1]
+        img_height = img.shape[0]
 
         # show original img
         if self.config.if_debug:
-            title = '**********train_origin_img {} * {}**********'
-            win = '**********train_origin_img**********'
+            title = '**********train_origin_img_getitem__ {} * {}**********'
+            win = '**********train_origin_img_getitem__**********'
             visdom_show_opencv(self.config.vis, img.copy(), title, win)
 
         if self.split == "train":
             single_img_bbox_list = []
             category_ids_list = []
             for single_bbox_info in anns:
+                # limit boundary
+                single_bbox_info["bbox"][0] = min(max(0, single_bbox_info["bbox"][0]), img_width) 
+                single_bbox_info["bbox"][1] = min(max(0, single_bbox_info["bbox"][1]), img_height) 
+
+                # limit too big bbox
+                if (single_bbox_info["bbox"][0] + single_bbox_info["bbox"][2]) > img_width:
+                    single_bbox_info["bbox"][2] = img_width - single_bbox_info["bbox"][0]
+                if (single_bbox_info["bbox"][1] + single_bbox_info["bbox"][3]) > img_height:
+                    single_bbox_info["bbox"][3] = img_height - single_bbox_info["bbox"][1]
+                # delete too small bbox 
+                if (single_bbox_info["bbox"][2]) < 2 or (single_bbox_info["bbox"][3] < 2):
+                    continue
                 single_img_bbox_list.append(single_bbox_info["bbox"])
                 category_ids_list.append(single_bbox_info["category_id"])
             # Aug
-            transformed = self.config.transform(image=img, bboxes=single_img_bbox_list, category_ids=category_ids_list)
+            transformed = self.config.transform(image=img, bboxes=single_img_bbox_list, category_ids=category_ids_list, type="coco")
             auged_img, auged_bbox, category_ids_list = transformed["image"], transformed["bboxes"], transformed["category_ids"]
 
             # show auged img
-            if self.config.if_debug:
+            if self.config.if_debug or self.config.if_show_anno:
                 category_name_list = []
                 # get English name class label
                 for category_id in category_ids_list:
                     category_name_list.append(self.coco.loadCats(category_id)[0]["name"]) 
-                draw_single_img_bbox_annotation(auged_img, auged_bbox, category_name_list, type="coco")
-                title = '**********train_auged_img {} * {}**********'
-                win = '**********train_auged_img**********'
-                visdom_show_opencv(self.config.vis, auged_img.copy(), title, win)
-                
+                if self.config.if_debug:
+                    draw_single_img_bbox_annotation(auged_img, auged_bbox, category_name_list, type="coco")
+                    title = '**********train_auged_img_getitem__ {} * {}**********'
+                    win = '**********train_auged_img_getitem__**********'
+                    visdom_show_opencv(self.config.vis, auged_img.copy(), title, win)
+
             inp = (auged_img.astype(np.float32) / 255.)
             inp = (inp - self.config.mean) / self.config.std
             inp = inp.transpose(2, 0, 1)
+            inp = inp.astype(np.float32)
             output_h = self.config.train_height // self.config.down_ratio
             output_w = self.config.train_width // self.config.down_ratio
 
             # Init Ground Truth
             hm = np.zeros((self.config.class_num, output_h, output_w), dtype=np.float32)
             wh = np.zeros((self.config.max_objs, 2), dtype=np.float32)
-            reg = np.zeros((self.max_objs, 2), dtype=np.float32)
+            reg = np.zeros((self.config.max_objs, 2), dtype=np.float32)
             ind = np.zeros((self.config.max_objs), dtype=np.int64)
             reg_mask = np.zeros((self.config.max_objs), dtype=np.uint8)
 
             # Build Ground Truth According to each bounding box
             for index, bbox in enumerate(auged_bbox):
                 cls_id = category_ids_list[index]
-                h, w = bbox[2], bbox[3]
+                h, w = bbox[2] / self.config.down_ratio, bbox[3] / self.config.down_ratio
                 if h > 0 and w > 0:
                     radius = gaussian_radius((math.ceil(h), math.ceil(w)))
                     radius = max(0, int(radius))
@@ -209,10 +224,19 @@ class DataSetCoco(data.Dataset):
                     reg_mask[index] = 1
 
             if self.config.if_debug:
-                hm = mergeHeatmap(hm)
-                title = '**********heatmap_gt**********'
-                win = '**********heatmap_gt**********'
-                visdom_show_heatmap(self.config.vis, hm.copy(), title, win)
-                time.sleep(2)
-            ret = {'input': inp, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh}
+                hm_show = mergeHeatmap(hm.copy())
+                title = '**********heatmap_gt_getitem__**********'
+                win = '**********heatmap_gt_getitem__**********'
+                visdom_show_heatmap(self.config.vis, hm_show.copy(), title, win)
+                # time.sleep(2)
+            if self.config.if_show_anno:
+                length = len(auged_bbox)
+                auged_bbox_array = np.ones((self.config.max_objs, 4)) * 999
+                category_ids_array = np.ones((self.config.max_objs)) * 999
+                if length != 0:
+                    auged_bbox_array[:length, :] = np.array(auged_bbox)
+                    category_ids_array[:len(category_ids_list)] = category_ids_list
+                ret = {'input': inp, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh, "reg": reg, "auged_bbox": auged_bbox_array, "auged_img": auged_img, "category_ids_array": category_ids_array}
+            else:
+                ret = {'input': inp, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh, "reg": reg}
             return ret

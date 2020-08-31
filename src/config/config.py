@@ -8,27 +8,6 @@ import os
 class Config:
     def __init__(self):
 
-        # ---------------------------   Hyper-Parameter  ------------------------------#
-
-        self.model_name = "dla34"  # "resnet50"/ SeNet / "efficientnet-b0"
-        self.train_epoch = 100
-
-        self.best_acc = 0.0
-        self.class_num = 0
-        self.task_name = "cifar10"
-        self.batch_size = 64
-        self.num_workers = 8
-        self.input_size = 224
-        self.mean = [0.408, 0.447, 0.47]
-        self.std = [0.289, 0.274, 0.278]
-        self.model_and_training_info_save_root = "./train_out/"  #
-        self.mix_up_alpha = 0.2
-        self.print_loss_interval = 100
-        self.print_loss_remainder = 99
-        self.dataLoader_num_worker = 32
-        self.class_weight = []
-        self.pretrain_model_path = ""
-        self.traing_time = get_time()
         # --------------------------   Net-Parameter  --------------------------------#
         self.train_height = 480
         self.train_width = 640
@@ -36,9 +15,16 @@ class Config:
         # self.train_width = 1280
         self.down_ratio = 4
         self.max_objs = 128
+        self.wh_weight = 0.1
+        self.hm_weight = 1.
+        self.off_weight = 1.
         # -------------------------------   Switch  ----------------------------------#
-        # if use visdom
-        self.use_visdom = True
+
+        # if show heatmap during training process
+        self.if_show_heatmap = True
+
+        # if show bounding box during training process
+        self.if_show_anno = True
 
         # if use mix up
         self.use_mix_up = False
@@ -73,7 +59,7 @@ class Config:
         if self.use_multi_gpu:
             # self.gpu_num = [3, 4, 5, 6]  # Multiple GPU
             # self.gpu_num = [4, 5, 6, 7]  # Multiple GPU
-            self.gpu_num = [1, 2, 3]  # Multiple GPU
+            self.gpu_num = [0, 1, 4, 5, 6, 7]  # Multiple GPU
         else:
             self.gpu_num = "1"  # Single GPU
 
@@ -84,6 +70,25 @@ class Config:
             80: self.base_lr * 0.001
         }
 
+        # ---------------------------   Hyper-Parameter  ------------------------------#
+
+        self.model_name = "dla34"  # "resnet50"/ SeNet / "efficientnet-b0"
+        self.train_epoch = 100
+
+        self.best_acc = 0.0
+        self.class_num = 0
+        # self.batch_size = 16 * len(self.gpu_num)
+        self.batch_size = 1
+        # self.num_workers = int(self.batch_size / 8)
+        self.num_workers = 0
+        self.mean = [0.408, 0.447, 0.47]
+        self.std = [0.289, 0.274, 0.278]
+        self.model_and_training_info_save_root = "./train_out/"  #
+        self.print_loss_interval = 100
+        self.print_loss_remainder = 99
+        self.pretrain_model_path = ""
+        self.traing_time = get_time()
+
 
 class TaskConfig(Config):
     def __init__(self):
@@ -91,7 +96,7 @@ class TaskConfig(Config):
         # self.data_root = "/data/yyh/2020/Simple-Centernet-with-Visualization-Pytorch/dataset/wuzhifenli"
         self.data_root = "/data/yyh/2020/Simple-Centernet-with-Visualization-Pytorch_/dataset/code_testing_coco"
         # self.data_root = "/data/yyh/2020/CenterNet/data/coco/"
-        self.training_name = "test"
+        self.training_name = "train_test"
         self.log_and_model_root = os.path.join(
             "./train_out", self.training_name, self.traing_time)
 
@@ -118,14 +123,15 @@ class TaskConfig(Config):
                 A.Flip(p=0.5),
                 A.ShiftScaleRotate(scale_limit=(-0.3, 0.3), shift_limit=(-0.3, 0.3),
                                    rotate_limit=(0, 0), border_mode=cv2.BORDER_CONSTANT, value=0, p=0.2),
-                A.RandomCrop(height=self.train_height, width=self.train_width, p=0.2),
+                A.RandomCrop(height=self.train_height,
+                             width=self.train_width, p=0.2),
                 A.Resize(height=self.train_height, width=self.train_width)
             ],
             bbox_params=A.BboxParams(
                 # format='pascal_voc', min_visibility=0.3, label_fields=['category_ids']),  # pascal_voc: [[x_min, y_min, x_max, y_max],[]]
                 format='coco', min_visibility=0.3, label_fields=['category_ids']),  # coco: [[x_min, y_min, width, height],[]]
         )
-        self.if_debug = True
+        self.if_debug = False
         self.vis = init_visdom_(window_name=self.training_name)
         if self.if_debug:
             self.num_workers = 0

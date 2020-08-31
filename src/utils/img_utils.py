@@ -126,21 +126,26 @@ def write_text_on_img(img, contant, position, color="red"):
         font_size = 0.5
         thickness = 1
     
-    
-
     x, y = position
     img = cv2.putText(img, str(contant), (int(x), int(y)), font, font_size, bgr, thickness)
     return img
 
 
 def draw_single_img_bbox_annotation(img, bbox_list, label_list, point_list=[], type="coco"):
-    for index, bbox in enumerate(bbox_list):
-        label = label_list[index]
+    for index, label in enumerate(label_list):
+        bbox = bbox_list[index]
         if len(point_list) == 0:
             img = draw_single_bbox_annotation(img, bbox, label, type=type)
         else:
             point = point_list[index]
             img = draw_single_bbox_annotation(img, bbox, point, label, type)
+    # for index, bbox in enumerate(bbox_list):
+    #     label = label_list[index]
+    #     if len(point_list) == 0:
+    #         img = draw_single_bbox_annotation(img, bbox, label, type=type)
+    #     else:
+    #         point = point_list[index]
+    #         img = draw_single_bbox_annotation(img, bbox, point, label, type)
 
 
 def draw_single_bbox_annotation(img, bbox, label, point=[], type="coco"):
@@ -184,6 +189,29 @@ def video_to_stream_save(video_path="", save_name_prefix="", save_root="", save_
         else:
             break
 
+
+def visual_training_process(config, batch, coco):
+     if config.if_show_heatmap or config.if_show_anno:
+        heatmap_show = batch["hm"][0].detach().numpy().copy()
+        heatmap_show = mergeHeatmap(heatmap_show)
+        title = '**********heatmap_gt {} * {} **********'
+        win = '**********heatmap_gt**********'
+        visdom_show_heatmap(config.vis, heatmap_show.copy(), title, win)
+        if config.if_show_anno:
+            if len(batch["auged_bbox"]) != 0:
+                auged_img_show = batch["auged_img"][0].detach().numpy().copy()
+                auged_bbox_show = batch["auged_bbox"][0]
+                category_ids_list_show = batch["category_ids_array"][0]
+                category_name_list_show = []
+                for category_id in category_ids_list_show:
+                    category_id = int(category_id)
+                    if category_id == 999:
+                        continue
+                    category_name_list_show.append(coco.loadCats(category_id)[0]["name"])
+                draw_single_img_bbox_annotation(auged_img_show, auged_bbox_show, category_name_list_show, type="coco")
+                title = '**********train_auged_img {} * {}**********'
+                win = '**********train_auged_img**********'
+                visdom_show_opencv(config.vis, auged_img_show.copy(), title, win)
 
 if __name__ == "__main__":
     # video_to_stream_save(video_path="/data/yyh/2020/Simple-Centernet-with-Visualization-Pytorch_/dataset/daoguan_jiechu/video/2020_08_06_18_12_26/top.avi",
