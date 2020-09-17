@@ -59,6 +59,10 @@ class Trainer(object):
                 # visualize bounding box and/or heatmap
                 if (indbatch % self.config.print_loss_interval) == self.config.print_loss_remainder:
                     visual_training_process(self.config, batch, self.dataset.coco)
+                    print(
+                        f"lr: {self.optimizer.param_groups[0]['lr']:.6f}, epoch: {epoch_flt:.2f} loss: {loss_stats['loss'].item():.4f}, hm_loss: {loss_stats['hm_loss'].item():.4f}, "
+                        f"xy_loss: {loss_stats['off_loss'].item():.4f}, wh_loss: {loss_stats['wh_loss'].item():.4f}"
+                    )
                 cuda_jump_list = ['auged_bbox',
                                   "auged_img", "category_name_list"]
                 for k in batch:
@@ -71,11 +75,6 @@ class Trainer(object):
                 loss.backward()
                 self.optimizer.step()
                 epoch_flt = epoch + indbatch / float(self.train_epoch_batchs)
-                if indbatch % 10 == 0:
-                    print(
-                        f"lr: {self.optimizer.param_groups[0]['lr']:.6f}, epoch: {epoch_flt:.2f} loss: {loss_stats['loss'].item():.4f}, hm_loss: {loss_stats['hm_loss'].item():.4f}, "
-                        f"xy_loss: {loss_stats['off_loss'].item():.4f}, wh_loss: {loss_stats['wh_loss'].item():.4f}"
-                    )
 
 
 if __name__ == "__main__":
